@@ -2,9 +2,11 @@ import React, { useEffect, useState } from 'react'
 import { Routes, Route, Link } from 'react-router-dom'
 import ServiceList from './pages/ServiceList'
 import ServiceDetail from './pages/ServiceDetail'
+import ServiceAction from './pages/ServiceAction'
 import Login from './pages/Login'
 import Register from './pages/Register'
 import SavedServices from './pages/SavedServices'
+import AppliedServices from './pages/AppliedServices'
 
 export default function App() {
   const [dark, setDark] = useState(false)
@@ -31,6 +33,7 @@ export default function App() {
           <button onClick={toggleTheme} className="btn btn-sm btn-link theme-icon" aria-label="Toggle dark mode" title={dark ? 'Light Mode' : 'Dark Mode'}>
             {dark ? '☀️' : '🌙'}
           </button>
+          <Link to="/applied-services" className="me-3">Applied</Link>
           <Link to="/login" className="me-3">Login</Link>
           <Link to="/register">Register</Link>
         </nav>
@@ -40,7 +43,9 @@ export default function App() {
       <Routes>
         <Route path="/" element={<ServiceList />} />
         <Route path="/services/:id" element={<ServiceDetail />} />
+        <Route path="/services/:id/:action" element={<ServiceAction />} />
         <Route path="/saved" element={<SavedServices />} />
+        <Route path="/applied-services" element={<AppliedServices />} />
         <Route path="/login" element={<Login />} />
         <Route path="/register" element={<Register />} />
       </Routes>
