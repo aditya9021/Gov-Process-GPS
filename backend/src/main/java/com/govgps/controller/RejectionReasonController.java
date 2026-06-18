@@ -16,7 +16,7 @@ public class RejectionReasonController {
     }
 
     @GetMapping("/{serviceId}")
-    public List<RejectionReason> getReasons(@PathVariable Long serviceId) {
+    public List<RejectionReason> getReasons(@PathVariable("serviceId") Long serviceId) {
         return rejectionReasonRepository.findByServiceId(serviceId);
     }
 }

@@ -16,7 +16,7 @@ public class DocumentController {
     }
 
     @GetMapping("/{serviceId}")
-    public List<Document> getDocuments(@PathVariable Long serviceId) {
+    public List<Document> getDocuments(@PathVariable("serviceId") Long serviceId) {
         return documentRepository.findByServiceId(serviceId);
     }
 

@@ -21,7 +21,7 @@ public class BookmarkController {
     }
 
     @GetMapping("/{userId}")
-    public List<Bookmark> getBookmarks(@PathVariable Long userId) {
+    public List<Bookmark> getBookmarks(@PathVariable("userId") Long userId) {
         return bookmarkRepository.findByUserId(userId);
     }
 }

@@ -1,54 +1,48 @@
 import React, { useEffect, useState } from 'react'
+import axios from 'axios'
 import { Link } from 'react-router-dom'
 
-const sampleAppliedServices = [
-  {
-    serviceId: 1,
-    serviceName: 'Birth Certificate',
-    department: 'Civic Services',
-    category: 'Vital Records',
-    submittedAt: '2026-06-12T14:20:00.000Z',
-    status: 'Submitted',
-    data: { applicantName: 'Asha Patel', dateOfBirth: '1998-09-18', placeOfBirth: 'Mumbai' },
-    documents: [
-      { id: 1, name: 'Birth Certificate Application Form', fileName: 'birth_cert_form.pdf', uploaded: true, uploadedAt: '2026-06-12T14:15:00.000Z' },
-      { id: 2, name: 'Proof of Identity', fileName: 'identity_proof.jpg', uploaded: true, uploadedAt: '2026-06-12T14:16:00.000Z' },
-      { id: 3, name: 'Proof of Birth', fileName: null, uploaded: false }
-    ]
-  },
-  {
-    serviceId: 4,
-    serviceName: 'Driver Licence Renewal',
-    department: 'Transport',
-    category: 'Licensing',
-    submittedAt: '2026-06-10T11:05:00.000Z',
-    status: 'In review',
-    data: { licenseNumber: 'DL-08-20210123', dateOfBirth: '1992-03-02' },
-    documents: [
-      { id: 9, name: 'Driver Licence Renewal Form', fileName: 'dl_renewal_form.pdf', uploaded: true, uploadedAt: '2026-06-10T11:00:00.000Z' },
-      { id: 10, name: 'Expired Licence', fileName: 'expired_license.pdf', uploaded: true, uploadedAt: '2026-06-10T11:02:00.000Z' },
-      { id: 11, name: 'Photo ID', fileName: 'photo_id.jpg', uploaded: true, uploadedAt: '2026-06-10T11:03:00.000Z' }
-    ]
-  }
-]
-
-export default function AppliedServices() {
+export default function AppliedServices({ auth }) {
   const [appliedServices, setAppliedServices] = useState([])
   const [expandedDocs, setExpandedDocs] = useState({})
   useEffect(() => {
-    const stored = JSON.parse(localStorage.getItem('appliedServices') || '[]')
-    setAppliedServices(stored.length > 0 ? stored : sampleAppliedServices)
-  }, [])
+    if (!auth?.user) {
+      setAppliedServices([])
+      return
+    }
+    const key = `appliedServices_${auth.user.id}`
+    const stored = JSON.parse(localStorage.getItem(key) || '[]')
+    setAppliedServices(stored)
+  }, [auth])
 
   const toggleDocuments = (key) => {
     setExpandedDocs(prev => ({ ...prev, [key]: !prev[key] }))
   }
 
-  const handleDownloadDocument = (doc) => {
-    if (doc.fileName) {
-      console.log(`Downloading: ${doc.fileName}`)
-      // Mock download - in real app would fetch from server
-      alert(`Document '${doc.fileName}' download started. (Mock)\n\nFile: ${doc.name}\nSize: ~2.5 MB`)
+  const handleDownloadDocument = async (doc) => {
+    const downloadId = doc.backendFileId || doc.fileId
+    if (!downloadId) {
+      alert('No download available for this document yet.')
+      return
+    }
+
+    try {
+      const response = await axios.get(`/api/files/download/${downloadId}`, {
+        responseType: 'blob'
+      })
+      const blob = new Blob([response.data], { type: response.headers['content-type'] || 'application/octet-stream' })
+      const url = window.URL.createObjectURL(blob)
+      const filename = doc.fileName || doc.name || 'download'
+      const link = document.createElement('a')
+      link.href = url
+      link.setAttribute('download', filename)
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      window.URL.revokeObjectURL(url)
+    } catch (error) {
+      console.error('Download failed:', error)
+      alert('Unable to download document. Please try again later.')
     }
   }
 
@@ -62,19 +56,26 @@ export default function AppliedServices() {
         <Link to="/" className="btn btn-outline-secondary">Back to services</Link>
       </div>
 
-      {appliedServices.length === 0 ? (
+      {(!auth?.user) ? (
+        <div className="card p-4 text-center text-muted">
+          <h5>Please login to view your applied services</h5>
+          <p className="mb-0">Sign in first, then apply for a service to see it listed here.</p>
+        </div>
+      ) : appliedServices.length === 0 ? (
         <div className="card p-4 text-center text-muted">
           <h5>No applied services yet</h5>
           <p className="mb-0">Complete an application from the service list to see it here.</p>
         </div>
       ) : (
-        <div className="row g-4">
+        <div className="row g-4 align-items-start">
           {appliedServices.map((item, index) => {
+            // Use a compound key (serviceId + index) so multiple applications
+            // for the same service render independently and toggles don't collide.
             const docKey = `${item.serviceId}-${index}`;
-            const isExpanded = expandedDocs[docKey];
+            const isExpanded = !!expandedDocs[docKey];
             return (
             <div className="col-lg-6 col-md-8" key={docKey}>
-              <div className="card applied-service-card h-100 shadow-sm">
+              <div className="card applied-service-card shadow-sm">
                 <div className="card-body d-flex flex-column gap-3">
                   <div className="applied-card-header">
                     <div>
@@ -110,7 +111,7 @@ export default function AppliedServices() {
                                 {doc.uploaded && <span className="document-status uploaded">✓ Uploaded</span>}
                                 {!doc.uploaded && <span className="document-status pending">○ Pending</span>}
                               </div>
-                              {doc.uploaded && (
+                              {doc.backendFileId ? (
                                 <button 
                                   onClick={() => handleDownloadDocument(doc)}
                                   className="btn btn-sm btn-link document-download"
@@ -118,6 +119,8 @@ export default function AppliedServices() {
                                 >
                                   ⬇ {doc.fileName}
                                 </button>
+                              ) : (
+                                <span className="text-muted small">Download not available</span>
                               )}
                             </div>
                           ))}
@@ -125,9 +128,8 @@ export default function AppliedServices() {
                       )}
                     </div>
                   )}
-                  <div className="mt-auto d-flex justify-content-between align-items-center flex-wrap gap-2">
+                  <div className="mt-auto d-flex justify-content-start align-items-center flex-wrap gap-2">
                     <small className="text-muted">Submitted {new Date(item.submittedAt).toLocaleDateString()}</small>
-                    <Link to="/" className="btn btn-sm btn-primary">Apply again</Link>
                   </div>
                 </div>
               </div>

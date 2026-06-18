@@ -21,7 +21,7 @@ public class ProgressController {
     }
 
     @GetMapping("/{userId}")
-    public List<UserProgress> getProgress(@PathVariable Long userId) {
+    public List<UserProgress> getProgress(@PathVariable("userId") Long userId) {
         return userProgressRepository.findByUserId(userId);
     }
 }

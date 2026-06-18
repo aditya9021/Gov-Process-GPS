@@ -16,7 +16,7 @@ public class WorkflowController {
     }
 
     @GetMapping("/{serviceId}")
-    public List<WorkflowStep> getWorkflow(@PathVariable Long serviceId) {
+    public List<WorkflowStep> getWorkflow(@PathVariable("serviceId") Long serviceId) {
         return workflowStepRepository.findByServiceIdOrderByStepOrder(serviceId);
     }
 
