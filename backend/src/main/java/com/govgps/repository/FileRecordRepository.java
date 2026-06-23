@@ -7,4 +7,5 @@ import java.util.List;
 public interface FileRecordRepository extends JpaRepository<FileRecord, Long> {
     List<FileRecord> findByRelatedServiceId(Long serviceId);
     List<FileRecord> findByUploadedBy(Long userId);
+    List<FileRecord> findByApplicationId(Long applicationId);
 }

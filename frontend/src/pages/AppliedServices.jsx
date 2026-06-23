@@ -5,18 +5,117 @@ import { Link } from 'react-router-dom'
 export default function AppliedServices({ auth }) {
   const [appliedServices, setAppliedServices] = useState([])
   const [expandedDocs, setExpandedDocs] = useState({})
+  const [expandedReason, setExpandedReason] = useState({})
   useEffect(() => {
     if (!auth?.user) {
       setAppliedServices([])
       return
     }
+
     const key = `appliedServices_${auth.user.id}`
-    const stored = JSON.parse(localStorage.getItem(key) || '[]')
-    setAppliedServices(stored)
+
+    axios.get('/api/applications/my', {
+      params: {
+        userId: auth.user.id,
+        page: 0,
+        size: 50
+      }
+    }).then(async res => {
+      const backendApps = Array.isArray(res.data.applications) ? res.data.applications : []
+      if (backendApps.length > 0) {
+        // Map basic app fields (include applicationId)
+        const mapped = backendApps.map(app => ({
+          applicationId: app.id,
+          serviceId: app.serviceId,
+          serviceName: app.serviceName,
+          department: app.department,
+          category: app.department || 'Service',
+          submittedAt: app.applicationDate,
+          status: app.status === 'PENDING' ? 'Submitted' : app.status,
+          rejectionReason: app.rejectionReason,
+          certificateFileId: app.certificateFileId,
+          documents: [
+            ...(app.certificateFileId ? [{
+              id: `cert-${app.certificateFileId}`,
+              name: 'Official Certificate',
+              fileName: 'certificate',
+              uploaded: true,
+              uploadedAt: null,
+              backendFileId: app.certificateFileId
+            }] : [])
+          ]
+        }))
+
+        // Fetch files for each service and attach those uploaded by current user
+        try {
+          const withDocs = await Promise.all(mapped.map(async item => {
+            try {
+              const resp = await axios.get(`/api/files/application/${item.applicationId}`, {
+                headers: auth?.token ? { Authorization: `Bearer ${auth.token}` } : {}
+              })
+              const files = Array.isArray(resp.data) ? resp.data : []
+              const userFiles = files.filter(f => String(f.uploadedBy) === String(auth.user.id))
+              const certificateFile = item.certificateFileId
+                ? files.find(f => String(f.id) === String(item.certificateFileId))
+                : null
+              const baseFiles = userFiles.length > 0 ? [...userFiles] : [...files]
+
+              if (certificateFile && !baseFiles.some(f => String(f.id) === String(certificateFile.id))) {
+                baseFiles.push(certificateFile)
+              }
+
+              const docs = baseFiles.map(f => ({
+                id: f.id,
+                name: f.documentName || f.originalName,
+                fileName: f.originalName,
+                uploaded: String(f.uploadedBy) === String(auth.user.id),
+                uploadedAt: f.uploadedAt,
+                backendFileId: f.id
+              }))
+
+              const existingFileIds = new Set(docs.map(d => String(d.backendFileId)))
+              const certs = item.documents.filter(d => {
+                if (!d || !String(d.id).startsWith('cert-')) return false
+                const certId = String(d.id).replace(/^cert-/, '')
+                return !existingFileIds.has(certId)
+              })
+              const otherExisting = item.documents.filter(d => !(d && String(d.id).startsWith('cert-')))
+              return { ...item, documents: [...certs, ...otherExisting, ...docs] }
+            } catch (e) {
+              return item
+            }
+          }))
+          setAppliedServices(withDocs)
+        } catch (e) {
+          setAppliedServices(mapped)
+        }
+      } else {
+        const stored = JSON.parse(localStorage.getItem(key) || '[]')
+        setAppliedServices(stored)
+      }
+    }).catch(() => {
+      const stored = JSON.parse(localStorage.getItem(key) || '[]')
+      setAppliedServices(stored)
+    })
   }, [auth])
 
   const toggleDocuments = (key) => {
     setExpandedDocs(prev => ({ ...prev, [key]: !prev[key] }))
+  }
+
+  const toggleReason = (key) => {
+    setExpandedReason(prev => ({ ...prev, [key]: !prev[key] }))
+  }
+
+  const getStatusBadgeClass = (status) => {
+    switch (String(status).toUpperCase()) {
+      case 'SUBMITTED': return 'badge bg-warning'
+      case 'IN PROGRESS': return 'badge bg-info'
+      case 'IN REVIEW': return 'badge bg-info'
+      case 'APPROVED': return 'badge bg-success'
+      case 'REJECTED': return 'badge bg-danger'
+      default: return 'badge bg-secondary'
+    }
   }
 
   const handleDownloadDocument = async (doc) => {
@@ -67,7 +166,7 @@ export default function AppliedServices({ auth }) {
           <p className="mb-0">Complete an application from the service list to see it here.</p>
         </div>
       ) : (
-        <div className="row g-4 align-items-start">
+        <div className="row g-4 align-items-start applied-services-grid">
           {appliedServices.map((item, index) => {
             // Use a compound key (serviceId + index) so multiple applications
             // for the same service render independently and toggles don't collide.
@@ -86,15 +185,31 @@ export default function AppliedServices({ auth }) {
                         <span>{item.category}</span>
                       </div>
                     </div>
-                    <span className={`badge-status ${item.status === 'In review' ? 'status-review' : 'status-submitted'}`}>{item.status}</span>
+                    <span className={getStatusBadgeClass(item.status)}>{item.status}</span>
                   </div>
                   <div className="applied-card-details">
                     <p className="mb-1"><strong>Primary applicant:</strong> {item.data?.applicantName || item.data?.businessName || 'Not provided'}</p>
                     <p className="mb-0 text-muted">{item.data?.dateOfBirth ? `DOB: ${item.data.dateOfBirth}` : item.data?.licenseNumber ? `License: ${item.data.licenseNumber}` : ''}</p>
                   </div>
-                  {item.documents && item.documents.length > 0 && (
+                  {item.status?.toUpperCase() === 'REJECTED' && item.rejectionReason && (
+                    <div className="rejection-reason-wrapper">
+                      <button
+                        type="button"
+                        className="btn btn-sm btn-outline-danger rejection-reason-toggle"
+                        onClick={() => toggleReason(docKey)}
+                      >
+                        {expandedReason[docKey] ? 'Hide rejection reason' : 'View rejection reason'}
+                      </button>
+                      {expandedReason[docKey] && (
+                        <div className="rejection-reason-box">
+                          {item.rejectionReason}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                  {item.documents && (
                     <div className="applied-card-documents">
-                      <button 
+                      <button
                         onClick={() => toggleDocuments(docKey)}
                         className="documents-toggle"
                       >
@@ -104,26 +219,32 @@ export default function AppliedServices({ auth }) {
                       </button>
                       {isExpanded && (
                         <div className="documents-list">
-                          {item.documents.map(doc => (
-                            <div key={doc.id} className="document-item">
+                          {item.documents.length === 0 ? (
+                            <div className="document-item">
                               <div className="document-info">
-                                <span className="document-name">{doc.name}</span>
-                                {doc.uploaded && <span className="document-status uploaded">✓ Uploaded</span>}
-                                {!doc.uploaded && <span className="document-status pending">○ Pending</span>}
+                                <span className="document-name text-muted">No uploaded documents</span>
                               </div>
-                              {doc.backendFileId ? (
-                                <button 
-                                  onClick={() => handleDownloadDocument(doc)}
-                                  className="btn btn-sm btn-link document-download"
-                                  title={`Download ${doc.fileName}`}
-                                >
-                                  ⬇ {doc.fileName}
-                                </button>
-                              ) : (
-                                <span className="text-muted small">Download not available</span>
-                              )}
                             </div>
-                          ))}
+                          ) : (
+                            item.documents.map(doc => (
+                              <div key={doc.id} className="document-item">
+                                <div className="document-info">
+                                  <span className="document-name">{doc.name}</span>
+                                </div>
+                                {doc.backendFileId ? (
+                                  <button
+                                    onClick={() => handleDownloadDocument(doc)}
+                                    className="btn btn-sm btn-link document-download"
+                                    title={`Download ${doc.fileName}`}
+                                  >
+                                    ⬇ {doc.fileName}
+                                  </button>
+                                ) : (
+                                  <span className="text-muted small">Download not available</span>
+                                )}
+                              </div>
+                            ))
+                          )}
                         </div>
                       )}
                     </div>

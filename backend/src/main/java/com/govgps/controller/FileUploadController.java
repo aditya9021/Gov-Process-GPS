@@ -19,6 +19,7 @@ import java.nio.file.Paths;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
+import com.govgps.repository.ServiceApplicationRepository;
 import java.util.UUID;
 
 @RestController
@@ -29,15 +30,20 @@ public class FileUploadController {
     private String uploadDir;
 
     private final FileRecordRepository fileRecordRepository;
+    private final ServiceApplicationRepository applicationRepository;
 
-    public FileUploadController(FileRecordRepository fileRecordRepository) {
+    public FileUploadController(FileRecordRepository fileRecordRepository, ServiceApplicationRepository applicationRepository) {
         this.fileRecordRepository = fileRecordRepository;
+        this.applicationRepository = applicationRepository;
     }
 
     @PostMapping("/upload")
     public ResponseEntity<?> uploadFile(
             @RequestParam("file") MultipartFile file,
             @RequestParam(value = "relatedServiceId", required = false) Long relatedServiceId,
+            @RequestParam(value = "applicationId", required = false) Long applicationId,
+            @RequestParam(value = "documentName", required = false) String documentName,
+            @RequestParam(value = "documentId", required = false) Long documentId,
             @RequestParam(value = "uploadedBy", required = false, defaultValue = "1") Long uploadedBy) {
 
         if (file.isEmpty()) {
@@ -82,7 +88,15 @@ public class FileUploadController {
             record.setFileSize(file.getSize());
             record.setUploadedAt(LocalDateTime.now());
             record.setUploadedBy(uploadedBy);
-            record.setRelatedServiceId(relatedServiceId);
+            record.setApplicationId(applicationId);
+            if (applicationId != null) {
+                applicationRepository.findById(applicationId)
+                        .ifPresent(app -> record.setRelatedServiceId(app.getService().getId()));
+            } else {
+                record.setRelatedServiceId(relatedServiceId);
+            }
+            record.setDocumentName(documentName);
+            record.setDocumentId(documentId);
 
             FileRecord saved = fileRecordRepository.save(record);
 
@@ -124,6 +138,11 @@ public class FileUploadController {
     @GetMapping("/service/{serviceId}")
     public List<FileRecord> listByService(@PathVariable("serviceId") Long serviceId) {
         return fileRecordRepository.findByRelatedServiceId(serviceId);
+    }
+
+    @GetMapping("/application/{applicationId}")
+    public List<FileRecord> listByApplication(@PathVariable("applicationId") Long applicationId) {
+        return fileRecordRepository.findByApplicationId(applicationId);
     }
 
     @GetMapping("/user/{userId}")

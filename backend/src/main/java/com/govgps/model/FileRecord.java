@@ -18,6 +18,9 @@ public class FileRecord {
     private LocalDateTime uploadedAt;
     private Long uploadedBy;
     private Long relatedServiceId;
+    private Long applicationId;
+    private String documentName;
+    private Long documentId;
 
     // getters and setters
     public Long getId() { return id; }
@@ -38,4 +41,10 @@ public class FileRecord {
     public void setUploadedBy(Long uploadedBy) { this.uploadedBy = uploadedBy; }
     public Long getRelatedServiceId() { return relatedServiceId; }
     public void setRelatedServiceId(Long relatedServiceId) { this.relatedServiceId = relatedServiceId; }
+    public Long getApplicationId() { return applicationId; }
+    public void setApplicationId(Long applicationId) { this.applicationId = applicationId; }
+    public String getDocumentName() { return documentName; }
+    public void setDocumentName(String documentName) { this.documentName = documentName; }
+    public Long getDocumentId() { return documentId; }
+    public void setDocumentId(Long documentId) { this.documentId = documentId; }
 }

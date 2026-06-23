@@ -14,7 +14,8 @@ export default function Login({ onLogin, showToast }) {
       .then(r => {
         const token = r.data.token
         const user = r.data.user
-        localStorage.setItem('auth', JSON.stringify({ token, user }))
+        localStorage.removeItem('auth')
+        localStorage.setItem('userAuth', JSON.stringify({ token, user }))
         if (typeof onLogin === 'function') {
           onLogin(user, token)
         }

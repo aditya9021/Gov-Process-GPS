@@ -5,10 +5,12 @@ import com.govgps.repository.*;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.Profile;
 
 @Configuration
 public class DataLoader {
     @Bean
+    @Profile("dev")
     CommandLineRunner loadData(GovServiceRepository serviceRepo,
                                WorkflowStepRepository workflowRepo,
                                DocumentRepository documentRepo,

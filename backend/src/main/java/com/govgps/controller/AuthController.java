@@ -7,6 +7,8 @@ import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.web.bind.annotation.*;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.Map;
 import java.util.Optional;
@@ -16,6 +18,7 @@ import java.util.Optional;
 public class AuthController {
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
+    private final Logger logger = LoggerFactory.getLogger(AuthController.class);
 
     public AuthController(UserRepository userRepository, PasswordEncoder passwordEncoder) {
         this.userRepository = userRepository;
@@ -49,7 +52,17 @@ public class AuthController {
             return ResponseEntity.status(401).body(Map.of("error", "Invalid credentials"));
         }
         User u = found.get();
-        if (!passwordEncoder.matches(credentials.getPassword(), u.getPassword())) {
+        // Debug: log password match diagnostic (do not log raw password or hash in production)
+        String stored = u.getPassword();
+        int storedLen = stored == null ? 0 : stored.length();
+        boolean matched = false;
+        try {
+            matched = passwordEncoder.matches(credentials.getPassword(), stored);
+        } catch (Exception ex) {
+            logger.error("Error while matching password for {}: {}", credentials.getEmail(), ex.getMessage());
+        }
+        logger.info("Login attempt for {}: storedPassLen={}, matched={}", credentials.getEmail(), storedLen, matched);
+        if (!matched) {
             return ResponseEntity.status(401).body(Map.of("error", "Invalid credentials"));
         }
         u.setPassword(null);

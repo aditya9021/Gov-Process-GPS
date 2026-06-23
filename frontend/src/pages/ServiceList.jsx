@@ -9,6 +9,7 @@ function debounce(fn, wait) {
 
 export default function ServiceList({ auth, showToast }) {
   const navigate = useNavigate()
+  const useDemo = (import.meta.env && (import.meta.env.VITE_USE_DEMO === 'true' || import.meta.env.DEV)) || false
   const demoServices = [
     { id: 1, name: 'Birth Certificate', description: 'Apply and download an official birth certificate.', department: 'Civic Services', estimatedDays: 3, category: 'Vital Records' },
     { id: 2, name: 'Start a Business', description: 'Register a new business and get required licences.', department: 'Commerce', estimatedDays: 10, category: 'Licensing' },
@@ -25,7 +26,7 @@ export default function ServiceList({ auth, showToast }) {
     { id: 9, name: 'Driving License', description: 'Apply for a new driving licence or learner permit.', department: 'Transport', estimatedDays: 21, category: 'Licensing' },
     { id: 10, name: 'Shop License', description: 'License to operate a shop in municipal limits.', department: 'Municipal Office', estimatedDays: 10, category: 'Licensing' }
   )
-  const [services, setServices] = useState(demoServices)
+  const [services, setServices] = useState([])
   const [query, setQuery] = useState('')
   const [applyModalService, setApplyModalService] = useState(null)
   const [applyDocuments, setApplyDocuments] = useState([])
@@ -41,6 +42,7 @@ export default function ServiceList({ auth, showToast }) {
   }, [applyModalService])
 
   const findDemoMatches = (q) => {
+    if (!useDemo) return []
     const searchTerm = q.toLowerCase()
     return demoServices.filter(ds =>
       ds.name.toLowerCase().includes(searchTerm) ||
@@ -55,18 +57,16 @@ export default function ServiceList({ auth, showToast }) {
       const backend = Array.isArray(res.data) ? res.data : []
       
       if (q) {
-        // When searching, only show backend results (don't merge with demo services)
+        // When searching, prefer backend results, otherwise search demo data (if enabled)
         setServices(backend.length > 0 ? backend : findDemoMatches(q))
       } else {
-        // When no search, merge backend with demo services
+        // When no search, treat backend as authoritative. Use demo data only if backend is empty and demo mode is enabled.
         if (backend.length) {
-          const merged = [...backend]
-          demoServices.forEach(ds => {
-            if (!backend.find(b => b.id === ds.id || b.name === ds.name)) merged.push(ds)
-          })
-          setServices(merged)
-        } else {
+          setServices(backend)
+        } else if (useDemo) {
           setServices(demoServices)
+        } else {
+          setServices([])
         }
       }
     }).catch(err => {
@@ -153,65 +153,81 @@ export default function ServiceList({ auth, showToast }) {
       return
     }
 
-    // Upload files to backend and then save application
-    Promise.all(
-      applyDocuments
-        .filter(doc => doc.attached && doc.file)
-        .map(doc =>
-          new Promise(async (resolve) => {
-            const formData = new FormData()
-            formData.append('file', doc.file)
-            formData.append('relatedServiceId', applyModalService.id)
-            formData.append('uploadedBy', auth?.user?.id || 1)
-
-            try {
-              const response = await axios.post('/api/files/upload', formData, {
-                headers: { 'Content-Type': 'multipart/form-data' }
-              })
-              resolve({ docId: doc.id, fileId: response.data.id, ...response.data })
-            } catch (err) {
-              console.error('File upload failed:', err)
-              resolve({ docId: doc.id, error: err.message })
-            }
-          })
-        )
-    ).then(uploadResults => {
-      const payload = {
-        serviceId: applyModalService?.id,
-        serviceName: applyModalService?.name,
-        department: applyModalService?.department,
-        category: applyModalService?.category,
-        submittedAt: new Date().toISOString(),
-        status: 'Submitted',
-        data: applyForm,
-        documents: applyDocuments.map(d => {
-          const uploadResult = uploadResults.find(r => r.docId === d.id)
-          const success = !!(uploadResult?.fileId || uploadResult?.id) && !uploadResult?.error
-          const fileId = uploadResult?.fileId || uploadResult?.id || null
-          return {
-            id: d.id,
-            name: d.name,
-            fileName: d.file ? d.file.name : null,
-            uploaded: success,
-            uploadedAt: success ? new Date().toISOString() : null,
-            mandatory: d.mandatory,
-            backendFileId: fileId,
-            fileId
-          }
-        })
-      }
-      persistAppliedService(payload)
-      console.log('Mock apply payload:', payload)
-      setApplySuccess(true)
-      if (typeof showToast === 'function') {
-        showToast(`Applied for ${applyModalService.name} successfully.`, 'success')
-      }
-    }).catch(err => {
-      console.error('Application submission failed:', err)
-      if (typeof showToast === 'function') {
-        showToast('Failed to submit application.', 'error')
+    // Create application first, then upload files against that application id
+    axios.post('/api/applications', {}, {
+      params: {
+        userId: auth.user.id,
+        serviceId: applyModalService.id
       }
     })
+      .then(async (appRes) => {
+        const applicationId = appRes?.data?.application?.id || null
+        const uploadResults = await Promise.all(
+          applyDocuments
+            .filter(doc => doc.attached && doc.file)
+            .map(doc =>
+              new Promise(async (resolve) => {
+                const formData = new FormData()
+                formData.append('file', doc.file)
+                formData.append('relatedServiceId', applyModalService.id)
+                if (applicationId) {
+                  formData.append('applicationId', applicationId)
+                }
+                formData.append('uploadedBy', auth?.user?.id || 1)
+                formData.append('documentName', doc.name)
+                formData.append('documentId', doc.id)
+
+                try {
+                  const response = await axios.post('/api/files/upload', formData)
+                  resolve({ docId: doc.id, fileId: response.data.id, ...response.data })
+                } catch (err) {
+                  console.error('File upload failed:', err)
+                  resolve({ docId: doc.id, error: err.message })
+                }
+              })
+            )
+        )
+
+        const payload = {
+          applicationId,
+          serviceId: applyModalService?.id,
+          serviceName: applyModalService?.name,
+          department: applyModalService?.department,
+          category: applyModalService?.category,
+          submittedAt: new Date().toISOString(),
+          status: 'Submitted',
+          data: applyForm,
+          documents: applyDocuments.map(d => {
+            const uploadResult = uploadResults.find(r => r.docId === d.id)
+            const success = !!(uploadResult?.fileId || uploadResult?.id) && !uploadResult?.error
+            const fileId = uploadResult?.fileId || uploadResult?.id || null
+            return {
+              id: d.id,
+              name: d.name,
+              fileName: d.file ? d.file.name : null,
+              uploaded: success,
+              uploadedAt: success ? new Date().toISOString() : null,
+              mandatory: d.mandatory,
+              backendFileId: fileId,
+              fileId
+            }
+          })
+        }
+
+        console.log('Application persisted to backend.')
+        persistAppliedService(payload)
+        console.log('Mock apply payload:', payload)
+        setApplySuccess(true)
+        if (typeof showToast === 'function') {
+          showToast(`Applied for ${applyModalService.name} successfully.`, 'success')
+        }
+      })
+      .catch(err => {
+        console.error('Backend application persistence failed:', err)
+        if (typeof showToast === 'function') {
+          showToast('Failed to submit application.', 'error')
+        }
+      })
   }
 
   function getApplyFieldsForService(serviceId, serviceName){
